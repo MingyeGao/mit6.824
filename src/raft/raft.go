@@ -71,8 +71,13 @@ type Raft struct {
 	currentState             ServerState
 	timeAlarm                <-chan time.Time
 	heartBeatTicker          *time.Ticker
-	logger                   log.Logger
+	logger                   Logger
+	lab2BLogger              Logger
 	receivedRpcDuringTimeout bool
+}
+
+type Logger interface {
+	Printf(format string, v ...interface{})
 }
 
 type ServerState int
@@ -86,7 +91,7 @@ const (
 type raftLog struct {
 	Term    int
 	Index   int
-	Command string
+	Command interface{}
 }
 
 // return currentTerm and whether this server
@@ -237,11 +242,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if rf.currentState == Leader {
 		rf.logger.Printf("Server%d is leader", rf.me)
-		if args.Term > rf.currentTerm {
-			rf.currentState = Follower
-			rf.logger.Printf("Leader %d discovered higher term from server %d, Leader->Follower", rf.me,
-				args.LeaderID)
-		}
 	} else if rf.currentState == Candidate {
 		rf.logger.Printf("Server%d is Candidate", rf.me)
 		rf.currentState = Follower
@@ -289,7 +289,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // the struct itself.
 //
 
-const rpcTimeout = time.Millisecond*200
+const rpcTimeout = time.Millisecond * 200
+
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ch := make(chan bool)
 	alarm := time.After(rpcTimeout)
@@ -301,7 +302,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	var ok bool
 	select {
 	case <-alarm:
-		rf.logger.Println("sendRequestVote timeout")
+		rf.logger.Printf("sendRequestVote timeout")
 		ok = false
 	case ok = <-ch:
 	}
@@ -319,7 +320,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	var ok bool
 	select {
 	case <-alarm:
-		rf.logger.Println("sendAppendEntries timeout")
+		rf.logger.Printf("sendAppendEntries timeout")
 		ok = false
 	case ok = <-ch:
 	}
@@ -396,9 +397,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	if err != nil {
 		log.Panicf("create log failed, error=%v", err)
 	}
-	rf.logger.SetOutput(logFile)
-	rf.logger.SetFlags(log.Ltime)
-	rf.logger.SetFlags(log.Lmicroseconds)
+	rf.logger = log.New(logFile, "", log.Ltime|log.Lmicroseconds)
 	electionTimeout := genElectionTimeout()
 	rf.timeAlarm = time.After(electionTimeout)
 	// initialize from state persisted before a crash
@@ -558,7 +557,7 @@ func runAsCandidate(rf *Raft) {
 			continue
 		}
 		ok := <-okChs[i]
-		reply := <- replyChs[i]
+		reply := <-replyChs[i]
 		if ok {
 			if reply.VoteGranted {
 				rf.logger.Printf("Server %d got vote from server %d", rf.me, reply.ServerID)
