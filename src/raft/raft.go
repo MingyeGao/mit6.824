@@ -442,7 +442,6 @@ func runAsLeader(rf *Raft) {
 			rf.mu.Unlock()
 			return
 		}
-		unreachedPeerNum := 0
 		for index, _ := range rf.peers {
 			if index == rf.me {
 				continue
@@ -459,9 +458,7 @@ func runAsLeader(rf *Raft) {
 			if !ok {
 				rf.logger.Printf("[Term%d]Leader %d send AppendEntries to server %d, got no reply", rf.currentTerm,
 					rf.me, index)
-				unreachedPeerNum++
-				rf.logger.Printf("[Term%d]Leader%d, unreachedPeerNum++ to %d", rf.currentTerm, rf.me, unreachedPeerNum)
-			} else if reply.Term > rf.currentTerm {
+				} else if reply.Term > rf.currentTerm {
 				rf.logger.Printf("[Term%d]Leader %d received AppendEntries resp with high term %d from server %d, "+
 					"turn to follower", rf.currentTerm, rf.me, reply.Term, index)
 				rf.currentTerm = reply.Term
@@ -471,17 +468,9 @@ func runAsLeader(rf *Raft) {
 			}
 
 		}
-		if unreachedPeerNum == len(rf.peers)-1 {
-			rf.logger.Printf("[Term%d] Lead %d cannot connect to any other server, Leader->Follower", rf.currentTerm,
-				rf.me)
-			rf.currentState = Follower
-			rf.mu.Unlock()
-			return
-		}
 		rf.mu.Unlock()
 		time.Sleep(500 * time.Millisecond)
 	}
-
 }
 
 func runAsFollower(rf *Raft) {
