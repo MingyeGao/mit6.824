@@ -433,44 +433,52 @@ func runServer(rf *Raft) {
 
 func runAsLeader(rf *Raft) {
 	rf.logger.Printf("[Term%d]Server %d run as Leader", rf.currentTerm, rf.me)
-	for {
-		if rf.killed() {
-			return
-		}
-		rf.mu.Lock()
-		if rf.currentState != Leader {
-			rf.mu.Unlock()
-			return
-		}
-		for index, _ := range rf.peers {
-			if index == rf.me {
-				continue
-			}
-			args := &AppendEntriesArgs{
-				LeaderID: rf.me,
-				Term:     rf.currentTerm,
-			}
-			reply := &AppendEntriesReply{}
-			rf.logger.Printf("[Term%d]Server %d send AppendEntries to server %d", rf.currentTerm, rf.me, index)
-			rf.mu.Unlock()
-			ok := rf.sendAppendEntries(index, args, reply)
-			rf.mu.Lock()
-			if !ok {
-				rf.logger.Printf("[Term%d]Leader %d send AppendEntries to server %d, got no reply", rf.currentTerm,
-					rf.me, index)
-				} else if reply.Term > rf.currentTerm {
-				rf.logger.Printf("[Term%d]Leader %d received AppendEntries resp with high term %d from server %d, "+
-					"turn to follower", rf.currentTerm, rf.me, reply.Term, index)
-				rf.currentTerm = reply.Term
-				rf.currentState = Follower
-				rf.mu.Unlock()
-				return
-			}
 
+	for index, _ := range rf.peers {
+		if index == rf.me {
+			continue
+		}
+		go func(index int) {
+			for {
+				if rf.killed() {
+					return
+				}
+				rf.mu.Lock()
+				args := &AppendEntriesArgs{
+					LeaderID: rf.me,
+					Term:     rf.currentTerm,
+				}
+				reply := &AppendEntriesReply{}
+				rf.logger.Printf("[Term%d]Server %d send AppendEntries to server %d", rf.currentTerm, rf.me, index)
+				rf.mu.Unlock()
+				ok := rf.sendAppendEntries(index, args, reply)
+				rf.mu.Lock()
+				if !ok {
+					rf.logger.Printf("[Term%d]Leader %d send AppendEntries to server %d, got no reply", rf.currentTerm,
+						rf.me, index)
+				} else if reply.Term > rf.currentTerm {
+					rf.logger.Printf("[Term%d]Leader %d received AppendEntries resp with high term %d from server %d, "+
+						"turn to follower", rf.currentTerm, rf.me, reply.Term, index)
+					rf.currentTerm = reply.Term
+					rf.currentState = Follower
+					rf.mu.Unlock()
+					return
+				}
+				rf.mu.Unlock()
+				time.Sleep(500 * time.Millisecond)
+			}
+		}(index)
+	}
+	for{
+		rf.mu.Lock()
+		if rf.killed() || rf.currentState != Leader {
+			rf.mu.Unlock()
+			return
 		}
 		rf.mu.Unlock()
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(200*time.Millisecond)
 	}
+
 }
 
 func runAsFollower(rf *Raft) {
