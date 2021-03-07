@@ -577,12 +577,8 @@ func runAsCandidate(rf *Raft) {
 		return
 	}
 	rf.logger.Printf("[Term%d] Server%d:unreachedServerNum =%d", rf.currentTerm, rf.me, unreachedServerNum)
-	validServerNum := len(rf.peers) - unreachedServerNum
-	if validServerNum == 1 {
-		rf.currentState = Follower
-		rf.mu.Unlock()
-		return
-	} else if voteNum >= (validServerNum/2 + 1) {
+	validServerNum := len(rf.peers)
+	if voteNum >= (validServerNum/2 + 1) {
 		rf.currentState = Leader
 		rf.mu.Unlock()
 		return
