@@ -106,8 +106,8 @@ func (r *Raft) getFirstIndexWithSameTermAsIndexAt(i int) int {
 	LogEntryAtI := r.log[i-1]
 	term := LogEntryAtI.Term
 	var result int
-	for j := i-1; j >= 0; j-- {
-		if r.log[j].Term != term{
+	for j := i - 1; j >= 0; j-- {
+		if r.log[j].Term != term {
 			break
 		}
 		result = j
@@ -147,7 +147,7 @@ func (r *Raft) updateCommitIndex(leaderCommit int) {
 		if leaderCommit < len(r.log)+1 {
 			tmp = leaderCommit
 		} else {
-			tmp = len(r.log) + 1
+			tmp = len(r.log)
 		}
 		for i := r.commitIndex + 1; i <= tmp; i++ {
 			msg := ApplyMsg{
@@ -339,7 +339,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	rf.logger.Printf("Server %d got RequestVote RPC from %d", rf.me, args.CandidateID)
 	reply.ServerID = rf.me
-	rf.receivedRpcDuringTimeout = true
 	if rf.currentTerm > args.Term {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
@@ -350,7 +349,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			"return to Follower", rf.currentTerm, rf.me, args.Term, args.CandidateID)
 		rf.currentState = Follower
 		rf.currentTerm = args.Term
-		rf.receivedRpcDuringTimeout = true
 		rf.votedFor = nil
 	}
 	if rf.votedFor != nil {
@@ -363,6 +361,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			reply.VoteGranted = true
 			reply.Result = true
 			rf.votedFor = &args.CandidateID
+			rf.receivedRpcDuringTimeout = true
 		} else {
 			rf.logger.Printf("Server%d didn't voter for %d, lastLogTerm:%dvs%d, lastLogIndex:%dvs%d", rf.me,
 				args.CandidateID, rf.lastLogTerm(), args.LastLogTerm, rf.lastLogIndex(), args.LastLogIndex)
@@ -375,13 +374,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	rf.logger.Printf("args.LeaderID=%d, Server%d locked in AppendEntries", args.LeaderID, rf.me)
-	rf.receivedRpcDuringTimeout = true
 
 	if rf.currentTerm > args.Term {
 		reply.Term = rf.currentTerm
 		return
 	}
-
+	rf.receivedRpcDuringTimeout = true
 	if args.Term > rf.currentTerm {
 		rf.logger.Printf("[Term%d]Server %d received AppendEntries with higher term %d from server %d, "+
 			"return to Follower", rf.currentTerm, rf.me, args.Term, args.LeaderID)
@@ -398,13 +396,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		//return
 	}
 	// 可以AppendEntries
-	rf.lab2BLogger.Printf("in appendEntries, reached here")
+	rf.lab2CLogger.Printf("in appendEntries, reached here")
 	rf.currentState = Follower
 	rf.receivedRpcDuringTimeout = true
 	rf.logger.Printf("Server %d received AppendEntries from server %d, currentState is %s", rf.me, args.LeaderID,
 		rf.currentState)
 	if !rf.hasLogEntryAtIndex(args.PrevLogIndex) {
-		rf.lab2BLogger.Printf("server %d, appendEntries return false, log=%v, prevLogIndex=%d, prevLogTerm=%d",
+		rf.lab2CLogger.Printf("server %d, appendEntries return false, log=%v, prevLogIndex=%d, prevLogTerm=%d",
 			rf.me, rf.log, args.PrevLogIndex, args.PrevLogTerm)
 		reply.RetryIndex = len(rf.log) + 1
 		reply.Success = false
@@ -412,7 +410,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 	if rf.conflictTermAtIndex(args.PrevLogIndex, args.PrevLogTerm) {
 		reply.RetryIndex = rf.getFirstIndexWithSameTermAsIndexAt(args.PrevLogIndex)
-		rf.lab2BLogger.Printf("server %d, appendEntries return false, log=%v, prevLogIndex=%d, prevLogTerm=%d, " +
+		rf.lab2CLogger.Printf("server %d, appendEntries return false, log=%v, prevLogIndex=%d, prevLogTerm=%d, "+
 			"retryIndex=%d", rf.me, rf.log, args.PrevLogIndex, args.PrevLogTerm, reply.RetryIndex)
 		reply.ConflictTerm = &rf.currentTerm
 		reply.Success = false
@@ -423,9 +421,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.updateLog(args.Entries)
 	rf.lab2CLogger.Printf("%d after append log=%v\n", rf.me, rf.log)
 	rf.persist()
-	rf.lab2BLogger.Printf("server%d, log=%v", rf.me, rf.log)
+	rf.lab2CLogger.Printf("server%d, log=%v", rf.me, rf.log)
 	rf.updateCommitIndex(args.LeaderCommit)
-	rf.lab2BLogger.Printf("server%d, commitIndex=%v", rf.me, rf.commitIndex)
+	rf.lab2CLogger.Printf("server%d, commitIndex=%v", rf.me, rf.commitIndex)
 
 	reply.Term = rf.currentTerm
 	reply.Success = true
@@ -476,7 +474,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	var ok bool
 	select {
 	case <-alarm:
-		rf.logger.Printf("sendRequestVote timeout")
+		rf.logger.Printf("sendRequestVote to %d timeout", server)
 		ok = false
 	case ok = <-ch:
 	}
@@ -526,7 +524,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	if rf.killed() {
 		return index, term, false
 	}
-	rf.lab2BLogger.Printf("server%d got command %d, state is %s", rf.me, command, rf.currentState)
+	rf.lab2CLogger.Printf("server%d got command %d, state is %s", rf.me, command, rf.currentState)
 	if rf.currentState != Leader {
 		return index, term, false
 	}
@@ -605,7 +603,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		log.Panicf("create log2C falied, error=%v", err)
 	}
 	rf.logger = log.New(logFile, "", log.Ltime|log.Lmicroseconds)
-	rf.lab2BLogger = log.New(log2BFile, "", log.Ltime|log.Lmicroseconds)
+	rf.lab2CLogger = log.New(log2BFile, "", log.Ltime|log.Lmicroseconds)
 	rf.lab2CLogger = log.New(log2CFile, "", log.Ltime|log.Lmicroseconds)
 	electionTimeout := genElectionTimeout()
 	rf.timeAlarm = time.After(electionTimeout)
@@ -618,7 +616,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 func genElectionTimeout() time.Duration {
 	rand.Seed(time.Now().UnixNano())
-	timeout := 200 + rand.Intn(800)
+	timeout := 300 + rand.Intn(800)
 	return time.Duration(timeout) * time.Millisecond
 }
 
@@ -651,8 +649,13 @@ func (rf *Raft) leaderBuildAppendEntriesRequest(server int) *AppendEntriesArgs {
 	if args.PrevLogIndex != 0 {
 		args.PrevLogTerm = rf.logEntryAtIndex(args.PrevLogIndex).Term
 	}
-	args.Entries = rf.log[args.PrevLogIndex:]
-	rf.lab2BLogger.Printf("Entries=%v", args.Entries)
+	// 没吃只传输50个日志
+	endEntry := args.PrevLogIndex + 100
+	if endEntry > len(rf.log) {
+		endEntry = len(rf.log)
+	}
+	args.Entries = rf.log[args.PrevLogIndex:endEntry]
+	rf.lab2CLogger.Printf("Entries=%v", args.Entries)
 	return args
 }
 
@@ -662,7 +665,7 @@ func (rf *Raft) leaderDealWithSuccessAppendEntries(serverIndex int, args *Append
 	}
 	rf.matchIndex[serverIndex] = args.PrevLogIndex + len(args.Entries)
 	rf.nextIndex[serverIndex] = rf.matchIndex[serverIndex] + 1
-	rf.lab2BLogger.Printf("SuccessAppendEntries, matchIndex[%d]=%d, nextIndex[%d]=%d", serverIndex,
+	rf.lab2CLogger.Printf("SuccessAppendEntries, matchIndex[%d]=%d, nextIndex[%d]=%d", serverIndex,
 		rf.matchIndex[serverIndex], serverIndex, rf.nextIndex[serverIndex])
 	// 更新commitIndex
 	var matchIndexList []int
@@ -686,7 +689,7 @@ func (rf *Raft) leaderDealWithSuccessAppendEntries(serverIndex int, args *Append
 		}
 		rf.commitIndex = majorityMatch
 	}
-	rf.lab2BLogger.Printf("leader%d, commitIndex=%d", rf.me, rf.commitIndex)
+	rf.lab2CLogger.Printf("leader%d, commitIndex=%d", rf.me, rf.commitIndex)
 }
 
 func (rf *Raft) leaderDealWithFailAppendEntries(serverIndex int, reply *AppendEntriesReply) {
@@ -710,7 +713,7 @@ func runAsLeader(rf *Raft) {
 	}
 	rf.isIndexArraysReady = true
 	rf.mu.Unlock()
-	rf.lab2BLogger.Printf("nextIndex and matchIndex init succeed")
+	rf.lab2CLogger.Printf("nextIndex and matchIndex init succeed")
 	for index, _ := range rf.peers {
 		if index == rf.me {
 			continue
@@ -722,7 +725,7 @@ func runAsLeader(rf *Raft) {
 					rf.mu.Unlock()
 					return
 				}
-				rf.lab2BLogger.Printf("nextIndex[%d]=%v", index, rf.nextIndex[index])
+				rf.lab2CLogger.Printf("nextIndex[%d]=%v", index, rf.nextIndex[index])
 				args := rf.leaderBuildAppendEntriesRequest(index)
 				reply := &AppendEntriesReply{}
 				rf.lab2CLogger.Printf("[Term%d]Server %d send AppendEntries to server %d", rf.currentTerm, rf.me, index)
@@ -733,7 +736,10 @@ func runAsLeader(rf *Raft) {
 				if !ok { // rpc超时
 					rf.lab2CLogger.Printf("[Term%d]Leader %d send AppendEntries to server %d, got no reply", rf.currentTerm,
 						rf.me, index)
-				} else if reply.Term > rf.currentTerm { // leader的Term 落后于其他server的Term
+				} else if reply.Term < rf.currentTerm{
+					rf.lab2CLogger.Printf("[Term%d]Leader %d sendAppendEntries recved old rpc with term %d",
+						rf.currentTerm, rf.me, reply.Term)
+				}else if reply.Term > rf.currentTerm { // leader的Term 落后于其他server的Term
 					rf.lab2CLogger.Printf("[Term%d]Leader %d received AppendEntries resp with high term %d from server %d, "+
 						"turn to follower", rf.currentTerm, rf.me, reply.Term, index)
 					rf.currentTerm = reply.Term
@@ -803,7 +809,7 @@ func runAsCandidate(rf *Raft) {
 	rf.persist()
 	electionTimeout := genElectionTimeout()
 	voteNum := 1
-	unreachedServerNum := 0
+	//unreachedServerNum := 0
 	var okChs []chan bool
 	var replyChs []chan *RequestVoteReply
 	for i := 0; i < len(rf.peers); i++ {
@@ -818,67 +824,127 @@ func runAsCandidate(rf *Raft) {
 		lastLogTerm = rf.log[len(rf.log)-1].Term
 	}
 	rf.mu.Unlock()
+	respChan := make(chan *RequestVoteReply, len(rf.peers))
 	for serverIndex, _ := range rf.peers {
 		if serverIndex == rf.me {
 			continue
 		}
-		go func(server int) {
-			args := &RequestVoteArgs{
-				Term:         currentTerm,
-				CandidateID:  me,
-				LastLogIndex: logLength,
-				LastLogTerm:  lastLogTerm,
+		go func(server, currentTerm int) {
+			for {
+				rf.mu.Lock()
+				if rf.currentState != Candidate || rf.currentTerm != currentTerm || rf.killed() {
+					rf.mu.Unlock()
+					return
+				}
+				rf.mu.Unlock()
+				args := &RequestVoteArgs{
+					Term:         currentTerm,
+					CandidateID:  me,
+					LastLogIndex: logLength,
+					LastLogTerm:  lastLogTerm,
+				}
+				reply := &RequestVoteReply{}
+				ok := rf.sendRequestVote(server, args, reply)
+				if ok {
+					respChan <- reply
+					return
+				}
 			}
-			reply := &RequestVoteReply{}
-			ok := rf.sendRequestVote(server, args, reply)
-			okChs[server] <- ok
-			replyChs[server] <- reply
-		}(serverIndex)
+
+		}(serverIndex, currentTerm)
 	}
-	rf.mu.Lock()
-	for i, _ := range okChs {
-		if i == rf.me {
-			continue
-		}
-		ok := <-okChs[i]
-		reply := <-replyChs[i]
-		if ok {
-			if reply.VoteGranted {
-				rf.logger.Printf("Server %d got vote from server %d", rf.me, reply.ServerID)
+	timer := time.NewTicker(electionTimeout)
+	for {
+		select {
+		case r := <-respChan:
+			rf.mu.Lock()
+			if rf.currentState != Candidate || rf.killed() {
+				rf.mu.Unlock()
+				return
+			}
+			if r.VoteGranted {
+				rf.logger.Printf("Server %d got vote from server %d", rf.me, r.ServerID)
 				voteNum++
-			} else if reply.Term > rf.currentTerm {
-				rf.logger.Printf("[Term%d]Server %d received RequestVote resp with higher term %d from server %d, "+
-					"turn to Follower", rf.currentTerm, rf.me, reply.Term, reply.ServerID)
-				rf.currentTerm = reply.Term
+				rf.logger.Printf("Server%d received vote from %d", rf.me, r.ServerID)
+				validServerNum := len(rf.peers)
+				if voteNum >= (validServerNum/2 + 1) {
+					rf.currentState = Leader
+					rf.isIndexArraysReady = false
+					rf.persist()
+					rf.mu.Unlock()
+					return
+				}
+			} else if r.Term < rf.currentTerm {
+				rf.lab2CLogger.Printf("[Term%d]Leader %d requestVote recved old rpc with term %d",
+					rf.currentTerm, rf.me, r.Term)
+			}else if r.Term > rf.currentTerm {
+				rf.logger.Printf("Server %d received RequestVote resp with higher term %d from server %d, "+
+					"turn to Follower", rf.me, r.Term, r.ServerID)
+				rf.currentTerm = r.Term
 				rf.currentState = Follower
 				rf.persist()
 				rf.mu.Unlock()
 				return
 			}
-		} else {
-			rf.logger.Printf("[Term%d]Server %d got no RequestVote reply from server %d", rf.currentTerm, rf.me, i)
-			unreachedServerNum += 1
+			rf.mu.Unlock()
+		case <-timer.C:
+			rf.mu.Lock()
+			if rf.currentState != Candidate || rf.killed() {
+				rf.mu.Unlock()
+				return
+			}
+			rf.currentTerm++
+			rf.persist()
+			rf.mu.Unlock()
+			return
 		}
 	}
-	if rf.currentState != Candidate {
-		rf.mu.Unlock()
-		return
-	}
-	rf.logger.Printf("[Term%d] Server%d:unreachedServerNum =%d", rf.currentTerm, rf.me, unreachedServerNum)
-	validServerNum := len(rf.peers)
-	if voteNum >= (validServerNum/2 + 1) {
-		rf.currentState = Leader
-		rf.isIndexArraysReady = false
-		rf.mu.Unlock()
-		return
-	}
-	rf.mu.Unlock()
-	time.Sleep(electionTimeout)
-	rf.mu.Lock()
-	// sleep期间可能收到来自leader的rpc，改变了状态
-	if rf.currentState != Candidate {
-		rf.mu.Unlock()
-		return
-	}
-	rf.mu.Unlock()
+
+	//rf.mu.Lock()
+	//for i, _ := range okChs {
+	//	if i == rf.me {
+	//		continue
+	//	}
+	//	ok := <-okChs[i]
+	//	reply := <-replyChs[i]
+	//	if ok {
+	//		if reply.VoteGranted {
+	//			rf.logger.Printf("Server %d got vote from server %d", rf.me, reply.ServerID)
+	//			voteNum++
+	//
+	//		} else if reply.Term > rf.currentTerm {
+	//			rf.logger.Printf("[Term%d]Server %d received RequestVote resp with higher term %d from server %d, "+
+	//				"turn to Follower", rf.currentTerm, rf.me, reply.Term, reply.ServerID)
+	//			rf.currentTerm = reply.Term
+	//			rf.currentState = Follower
+	//			rf.persist()
+	//			rf.mu.Unlock()
+	//			return
+	//		}
+	//	} else {
+	//		rf.logger.Printf("[Term%d]Server %d got no RequestVote reply from server %d", rf.currentTerm, rf.me, i)
+	//		unreachedServerNum += 1
+	//	}
+	//}
+	//if rf.currentState != Candidate {
+	//	rf.mu.Unlock()
+	//	return
+	//}
+	//rf.logger.Printf("[Term%d] Server%d:unreachedServerNum =%d", rf.currentTerm, rf.me, unreachedServerNum)
+	//validServerNum := len(rf.peers)
+	//if voteNum >= (validServerNum/2 + 1) {
+	//	rf.currentState = Leader
+	//	rf.isIndexArraysReady = false
+	//	rf.mu.Unlock()
+	//	return
+	//}
+	//rf.mu.Unlock()
+	//time.Sleep(electionTimeout)
+	//rf.mu.Lock()
+	//// sleep期间可能收到来自leader的rpc，改变了状态
+	//if rf.currentState != Candidate {
+	//	rf.mu.Unlock()
+	//	return
+	//}
+	//rf.mu.Unlock()
 }
