@@ -524,7 +524,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	if rf.killed() {
 		return index, term, false
 	}
-	rf.lab2CLogger.Printf("server%d got command %d, state is %s", rf.me, command, rf.currentState)
+	rf.lab2CLogger.Printf("server%d got command %v, state is %s", rf.me, command, rf.currentState)
 	if rf.currentState != Leader {
 		return index, term, false
 	}
@@ -893,7 +893,7 @@ func runAsCandidate(rf *Raft) {
 				rf.mu.Unlock()
 				return
 			}
-			rf.currentTerm++
+			//rf.currentTerm++
 			rf.persist()
 			rf.mu.Unlock()
 			return
