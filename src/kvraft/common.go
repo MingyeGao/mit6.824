@@ -1,9 +1,13 @@
 package kvraft
 
+import "fmt"
+
 const (
 	OK             = "OK"
 	ErrNoKey       = "ErrNoKey"
 	ErrWrongLeader = "ErrWrongLeader"
+	ErrRaftTimeout = "ErrRaftTimeout"
+	ErrInternal    = "ErrInternal"
 )
 
 type Err string
@@ -16,6 +20,11 @@ type PutAppendArgs struct {
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	IdempotentID int
+}
+
+func (args *PutAppendArgs) Cmd() string {
+	return fmt.Sprintf("[%s, %s, %s]", args.Op, args.Key, args.Value)
 }
 
 type PutAppendReply struct {
@@ -25,6 +34,7 @@ type PutAppendReply struct {
 type GetArgs struct {
 	Key string
 	// You'll have to add definitions here.
+	IdempotentID int
 }
 
 type GetReply struct {

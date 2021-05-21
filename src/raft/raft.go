@@ -231,8 +231,6 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
-	rf.persister.mu.Lock()
-	rf.persister.mu.Unlock()
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
 	e.Encode(rf.currentTerm)
@@ -461,7 +459,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // the struct itself.
 //
 
-const rpcTimeout = time.Millisecond * 200
+const rpcTimeout = time.Millisecond * 400
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ch := make(chan bool)
@@ -899,52 +897,4 @@ func runAsCandidate(rf *Raft) {
 			return
 		}
 	}
-
-	//rf.mu.Lock()
-	//for i, _ := range okChs {
-	//	if i == rf.me {
-	//		continue
-	//	}
-	//	ok := <-okChs[i]
-	//	reply := <-replyChs[i]
-	//	if ok {
-	//		if reply.VoteGranted {
-	//			rf.logger.Printf("Server %d got vote from server %d", rf.me, reply.ServerID)
-	//			voteNum++
-	//
-	//		} else if reply.Term > rf.currentTerm {
-	//			rf.logger.Printf("[Term%d]Server %d received RequestVote resp with higher term %d from server %d, "+
-	//				"turn to Follower", rf.currentTerm, rf.me, reply.Term, reply.ServerID)
-	//			rf.currentTerm = reply.Term
-	//			rf.currentState = Follower
-	//			rf.persist()
-	//			rf.mu.Unlock()
-	//			return
-	//		}
-	//	} else {
-	//		rf.logger.Printf("[Term%d]Server %d got no RequestVote reply from server %d", rf.currentTerm, rf.me, i)
-	//		unreachedServerNum += 1
-	//	}
-	//}
-	//if rf.currentState != Candidate {
-	//	rf.mu.Unlock()
-	//	return
-	//}
-	//rf.logger.Printf("[Term%d] Server%d:unreachedServerNum =%d", rf.currentTerm, rf.me, unreachedServerNum)
-	//validServerNum := len(rf.peers)
-	//if voteNum >= (validServerNum/2 + 1) {
-	//	rf.currentState = Leader
-	//	rf.isIndexArraysReady = false
-	//	rf.mu.Unlock()
-	//	return
-	//}
-	//rf.mu.Unlock()
-	//time.Sleep(electionTimeout)
-	//rf.mu.Lock()
-	//// sleep期间可能收到来自leader的rpc，改变了状态
-	//if rf.currentState != Candidate {
-	//	rf.mu.Unlock()
-	//	return
-	//}
-	//rf.mu.Unlock()
 }

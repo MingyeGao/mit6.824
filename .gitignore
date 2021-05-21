@@ -3,3 +3,4 @@ api.key
 *-handin.tar.gz
 .idea/
 /src/raft/raft-log*
+/src/kvraft/*.txt
