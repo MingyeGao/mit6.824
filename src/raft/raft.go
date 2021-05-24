@@ -400,16 +400,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.logger.Printf("Server %d received AppendEntries from server %d, currentState is %s", rf.me, args.LeaderID,
 		rf.currentState)
 	if !rf.hasLogEntryAtIndex(args.PrevLogIndex) {
-		rf.lab2CLogger.Printf("server %d, appendEntries return false, log=%v, prevLogIndex=%d, prevLogTerm=%d",
-			rf.me, rf.log, args.PrevLogIndex, args.PrevLogTerm)
+		rf.lab2CLogger.Printf("server %d, appendEntries return false, no entry, log=%v, prevLogIndex=%d, " +
+			"prevLogTerm=%d", rf.me, rf.log, args.PrevLogIndex, args.PrevLogTerm)
 		reply.RetryIndex = len(rf.log) + 1
 		reply.Success = false
 		return
 	}
 	if rf.conflictTermAtIndex(args.PrevLogIndex, args.PrevLogTerm) {
 		reply.RetryIndex = rf.getFirstIndexWithSameTermAsIndexAt(args.PrevLogIndex)
-		rf.lab2CLogger.Printf("server %d, appendEntries return false, log=%v, prevLogIndex=%d, prevLogTerm=%d, "+
-			"retryIndex=%d", rf.me, rf.log, args.PrevLogIndex, args.PrevLogTerm, reply.RetryIndex)
+		rf.lab2CLogger.Printf("server %d, appendEntries return false, conflict entry, log=%v, prevLogIndex=%d, " +
+			"prevLogTerm=%d, "+"retryIndex=%d", rf.me, rf.log, args.PrevLogIndex, args.PrevLogTerm, reply.RetryIndex)
 		reply.ConflictTerm = &rf.currentTerm
 		reply.Success = false
 		return
@@ -459,7 +459,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // the struct itself.
 //
 
-const rpcTimeout = time.Millisecond * 400
+const rpcTimeout = time.Millisecond * 500
 
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ch := make(chan bool)
@@ -647,8 +647,8 @@ func (rf *Raft) leaderBuildAppendEntriesRequest(server int) *AppendEntriesArgs {
 	if args.PrevLogIndex != 0 {
 		args.PrevLogTerm = rf.logEntryAtIndex(args.PrevLogIndex).Term
 	}
-	// 没吃只传输50个日志
-	endEntry := args.PrevLogIndex + 100
+
+	endEntry := args.PrevLogIndex + 10000
 	if endEntry > len(rf.log) {
 		endEntry = len(rf.log)
 	}
