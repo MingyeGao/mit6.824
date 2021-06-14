@@ -26,12 +26,12 @@ type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Operation    string
-	Key          string
-	Value        string
-	RespCh       chan raftResp
-	ServerID     int //处理rpc的serverID；如果msgCh中得到的消息中，serverID不等于me，则不向ch发送
-	IdempotentID int
+	Operation      string
+	Key            string
+	Value          string
+	RespCh         chan raftResp
+	ServerID       int //处理rpc的serverID；如果msgCh中得到的消息中，serverID不等于me，则不向ch发送
+	IdempotentID   int
 	ServerUniqueID string
 }
 
@@ -59,7 +59,11 @@ type KVServer struct {
 	cmdIdempotentIDMap       map[int]idempotentEntry
 	cmdIdempotentIDQueue     *list.List
 	cmdIdempotentIDQueueSize int
-	uniqueID string
+	uniqueID                 string
+
+	// 3B
+	persisterSizeThreshold int
+	persister              *raft.Persister
 }
 
 type idempotentEntry struct {
@@ -79,10 +83,10 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	//}
 	//kv.lab3ALogger.Printf("%d is leader", kv.me)
 	op := Op{
-		Operation:    "Get",
-		Key:          args.Key,
-		ServerID:     kv.me,
-		IdempotentID: args.IdempotentID,
+		Operation:      "Get",
+		Key:            args.Key,
+		ServerID:       kv.me,
+		IdempotentID:   args.IdempotentID,
 		ServerUniqueID: kv.uniqueID,
 	}
 	op.RespCh = make(chan raftResp, 10)
@@ -124,11 +128,11 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	//	return
 	//}
 	op := Op{
-		Operation:    args.Op,
-		Value:        args.Value,
-		Key:          args.Key,
-		ServerID:     kv.me,
-		IdempotentID: args.IdempotentID,
+		Operation:      args.Op,
+		Value:          args.Value,
+		Key:            args.Key,
+		ServerID:       kv.me,
+		IdempotentID:   args.IdempotentID,
 		ServerUniqueID: kv.uniqueID,
 	}
 	op.RespCh = make(chan raftResp, 10)
@@ -267,7 +271,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 	kv.database = make(map[string]string)
-	logFile, err := os.Create(fmt.Sprintf("raft-log3A-%d.txt", me))
+	logFile, err := os.Create(fmt.Sprintf("kvserver-log3A-%d.txt", me))
 	kv.lab3ALogger = log.New(logFile, "", log.Ltime|log.Lmicroseconds)
 	if err != nil {
 		log.Panicf("create log failed, error=%v", err)
@@ -279,6 +283,15 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.cmdIdempotentIDMap = make(map[int]idempotentEntry)
 	kv.cmdIdempotentIDQueue = list.New()
 	kv.cmdIdempotentIDQueueSize = 10000
+
+	// 3C
+	kv.persisterSizeThreshold = int(0.9 * float32(maxraftstate))
+	kv.persister = persister
+	snapshotContent := kv.rf.ExplainSnapshotData(kv.persister.ReadSnapshot())
+	if snapshotContent.Database != nil {
+		kv.database = snapshotContent.Database
+	}
+
 
 	time.Sleep(time.Second)
 
@@ -293,6 +306,9 @@ func databaseRoutine(server *KVServer) {
 			return
 		}
 		msg := <-server.applyCh
+		if !msg.CommandValid {
+			continue
+		}
 		op := msg.Command.(Op)
 		server.lab3ALogger.Printf("from applyCh [%v]:[%v,%v,%v]", msg.CommandIndex, op.Operation, op.Key, op.Value)
 
@@ -314,6 +330,15 @@ func databaseRoutine(server *KVServer) {
 			server.lab3ALogger.Printf("[gmy]isLeader, result=%v, keyExist=%v", resp.Value,
 				resp.KeyExist)
 			op.RespCh <- resp
+			if server.stateSizeReachedThreshold() {
+				snapshot := raft.SnapshotContent{
+					Database: server.database,
+					LastIncludedIndex: msg.CommandIndex,
+					LastIncludedTerm: msg.CommandTerm,
+				}
+				snapshotData := server.rf.BuildSnapshotData(snapshot)
+				server.rf.LeaderSaveSnapshot(snapshotData, snapshot.LastIncludedIndex)
+			}
 		}
 		server.lab3ALogger.Printf("[gmy]after send to RespCh")
 	}
@@ -360,4 +385,11 @@ func parseAppendCommand(server *KVServer, op Op) (result string, keyExist bool) 
 	server.lab3ALogger.Printf("Append [%s], originValue=%s, newValue=%s", op.Key, originValue, newValue)
 	server.lab3ALogger.Printf("AppendCommand database:%v", server.database)
 	return
+}
+
+func (kv *KVServer) stateSizeReachedThreshold() bool {
+	if kv.maxraftstate < 0 {
+		return false
+	}
+	return kv.persister.RaftStateSize() > kv.persisterSizeThreshold
 }
